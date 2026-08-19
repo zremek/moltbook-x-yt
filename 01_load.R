@@ -5,7 +5,7 @@ library(tidyverse)
 full_x_20260818 <- read_csv("zeeschuimer-export-twitter.com-2026-08-18T10_11_55.605Z.csv")
 
 problems(full_x_20260818)
-dim(full_x_20260818) # sth wrong, should be over 40K
+dim(full_x_20260818) # sth wrong, 27373 obs. - should be over 40K
 # maybe using zeehaven was a mistake,
 # let's parse source ndjson file 
 
@@ -97,6 +97,9 @@ extract_search_query <- function(url) {
   URLdecode(str_replace_all(m, "\\+", " "))
 }
 
+
+
+
 # ---- parse a single ndjson line/item into a one-row tibble ----
 parse_item <- function(item) {
   tw <- item[["data"]]
@@ -133,9 +136,15 @@ parse_item <- function(item) {
   long_lat  <- if (!is.null(coords)) paste(unlist(coords), collapse = ",") else NA_character_
   place_nm  <- safe_chr(legacy, "place", "full_name")
   
+  # --- tweet creation time ---
   created_at_chr <- safe_chr(legacy, "created_at")
   created_at_ts  <- suppressWarnings(
     as.POSIXct(created_at_chr, format = "%a %b %d %H:%M:%S %z %Y", tz = "UTC")
+  )
+  
+  # --- scrape/collection time (Zeeschuimer capture metadata, ms since epoch) ---
+  collected_at_ts <- suppressWarnings(
+    as.POSIXct(safe_num(item, "timestamp_collected") / 1000, origin = "1970-01-01", tz = "UTC")
   )
   
   search_url <- safe_chr(item, "source_platform_url")
@@ -143,8 +152,8 @@ parse_item <- function(item) {
   tibble(
     id                 = tweet_id,
     thread_id          = safe_chr(legacy, "conversation_id_str"),
-    timestamp          = format(created_at_ts, "%Y-%m-%d %H:%M:%S"),
-    unix_timestamp     = as.numeric(created_at_ts),
+    created_at         = created_at_ts,     # tweet's original posting time
+    collected_at       = collected_at_ts,   # when Zeeschuimer scraped it
     link               = if (!is.na(screen_name) && !is.na(tweet_id))
       paste0("https://x.com/", screen_name, "/status/", tweet_id) else NA_character_,
     subject            = NA_character_,
@@ -184,15 +193,10 @@ parse_item <- function(item) {
   )
 }
 
-new_ndfull_x_20260818 <- map_dfr(raw_items, parse_item) %>%
+ndfull_x_20260818 <- map_dfr(raw_items, parse_item) %>%
   distinct(id, .keep_all = TRUE) %>%
   as_tibble()
 
-# TODO 
-# filter by date and promoted content
-# note what promoted content (from period before Moltbook launch) is in the scraped data
-# do not use promoted content in thematic analysis 
-# use tweets from Moltbook lanunch to the end of July 
 
 # why my data has 30 052 rows when zeeschuimer says 41 131? #### 
 n_lines <- length(lines)
@@ -221,4 +225,96 @@ cat("rows before dedup: ", n_total, "\n")
 cat("unique IDs:        ", n_distinct, "\n")
 cat("duplicate rows:    ", n_dupes, "\n")
 
+all_rows |> count(id) |> arrange(-n)
+
+all_rows |> filter(id == "2017241420554277251") |> View()
+ndfull_x_20260818 |> filter(id == "2017241420554277251") |> View()
+# ndfull has the oldest capture date
+all_rows |> filter(id == "2026039363130560882") |> View()
+ndfull_x_20260818 |> filter(id == "2026039363130560882") |> View()
+# confirmed - the oldest capture date, good 
+
+# note what promoted content (from period before Moltbook launch) is in the scraped data #### 
+
+ndfull_x_20260818 |> count(promoted)
+ndfull_x_20260818 |> filter(promoted == TRUE) |> View()
+
+library(sjmisc)
+
+ndfull_x_20260818 |> filter(promoted == TRUE) |> 
+  select(author) |> 
+  frq(sort.frq = "desc", min.frq = 2)
+
+frq(ndfull_x_20260818$promoted) # less than 1% 
+
+# let's check who is who 
+
+# Value           |  N | Raw % | Valid % | Cum. %
+# -----------------------------------------------
+# thejsnation     | 21 |  7.64 |    7.64 |   7.64
+# AikidoSecurity  | 17 |  6.18 |    6.18 |  13.82
+# FundacjaAP      | 15 |  5.45 |    5.45 |  19.27
+# ING__Polska     |  8 |  2.91 |    2.91 |  22.18
+# BetclicPolska   |  7 |  2.55 |    2.55 |  24.73
+# Akademia_WSB    |  6 |  2.18 |    2.18 |  26.91
+# Coding_Creed    |  6 |  2.18 |    2.18 |  29.09
+# FTMO_com        |  6 |  2.18 |    2.18 |  31.27
+# GrupaMtp        |  6 |  2.18 |    2.18 |  33.45
+# eBiletPL        |  5 |  1.82 |    1.82 |  35.27
+# eduardmirica    |  5 |  1.82 |    1.82 |  37.09
+# TradexWhisperer |  5 |  1.82 |    1.82 |  38.91
+# Y_J_Inquisitor  |  5 |  1.82 |    1.82 |  40.73
+
+# Twitter handle lookup table
+# Value           |  N | Official URL                                | Description
+# --------------------------------------------------------------------------------------------
+# thejsnation     | 21 | https://twitter.com/thejsnation             | JS Nation - JavaScript-focused international tech conference (GitNation family)
+# AikidoSecurity  | 17 | https://twitter.com/AikidoSecurity           | Aikido Security - Belgian app security platform (SAST, dependency/vuln scanning)
+# FundacjaAP      | 15 | https://x.com/FundacjaAP                     | Fundacja Academic Partners - Polish non-profit organizing IT events (Warsaw IT Days, Hack Summit)
+# ING__Polska     |  8 | https://twitter.com/ING__Polska              | ING Bank Slaski - Polish arm of ING Group, major retail/corporate bank
+# BetclicPolska   |  7 | https://twitter.com/BetclicPolska            | Betclic Polska - Polish branch of Betclic online sports betting company
+# Akademia_WSB    |  6 | https://twitter.com/Akademia_WSB             | WSB University - private Polish university (business, IT programs)
+# Coding_Creed    |  6 | https://twitter.com/codingcreed              | Coding Creed - software/web dev studio (custom software, UX/UI, TS/React tools)
+# FTMO_com        |  6 | https://twitter.com/FTMO_com                 | FTMO - Czech prop trading firm funding forex/futures traders
+# GrupaMtp        |  6 | https://twitter.com/GrupaMtp                 | Grupa MTP - Poznan International Fair, major Polish trade fair organizer
+# eBiletPL        |  5 | https://twitter.com/eBiletPL                 | eBilet.pl - leading Polish online ticketing platform (concerts, events, sports)
+# eduardmirica    |  5 | https://x.com/eduardmirica                   | Eduard Mirica - Romanian VR/AR artist and indie game developer
+# TradexWhisperer |  5 | https://x.com/TradexWhisperer                | Trade Whisperer - finance/markets commentator, stock analysis and chart signals
+# Y_J_Inquisitor  |  5 | https://x.com/Y_J_Inquisitor                 | Personal X account; limited public info available on owner/focus
+
+# tech conferences and companies, banks and trading, betting, 
+# tech and finance influencers, private education - better keep them and filter just by date?  
+
+# use tweets from Moltbook lanunch to the end of July #### 
+
+# . Moltbook launched on January 28, 2026 
+nd <- ndfull_x_20260818 |> filter(between(x = created_at, left = as_datetime("2026-01-28 00:00:00"), right = as_datetime("2026-07-31 23:59:59")))
+
+outside_time_period <- nrow(ndfull_x_20260818) - nrow(nd)
+cat(outside_time_period, "obs. outside time period, ", outside_time_period / nrow(ndfull_x_20260818) * 100, "% of all obs.")
+# only 1.56 % of observations are outside time period 
+
+summary(nd$created_at)
+
+ggplot(nd, aes(x = created_at)) +
+  geom_freqpoly(binwidth = 60 * 60 * 24) +      # daily
+  theme_minimal()
+
+ggplot(nd, aes(x = created_at)) +
+  geom_freqpoly(binwidth = 60 * 60 * 24 * 7) +  # weekly
+  theme_minimal() + 
+  scale_x_datetime(date_breaks = "1 month", date_labels = "%b")
+
+# let's see the first post
+
+nd |> filter(created_at == as_datetime("2026-01-28 07:14:26")) |> View() 
+# promoted from the jsnation, not about moltbook
+
+nd |> slice_min(created_at, n = 10) |> View() 
+# Matt Schlicht — twórca Moltbook, w biznesie AI Agents od paru lat. 
+# Jego tweety są w moich danych pierwszymi merytorycznymi o Moltbook: thread_id 2016560277333168540
+
+# OK, nd is final dataset for ESA #### 
+
+# save(nd, file = "nd.RData")
 
