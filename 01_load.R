@@ -318,3 +318,4 @@ nd |> slice_min(created_at, n = 10) |> View()
 
 # save(nd, file = "nd.RData")
 
+cat("n =", nrow(nd), "is the x.com sample size for ESA")
