@@ -332,5 +332,185 @@ test7 <- classify_with_timing_temp(
   model           = model_qwen2514b
 ) # Done! 100 comments in 80s (0.8s per comment)
 
-table(test7$fake_or_real_class7) # 10% yes, 19% uncertain - too much? #### 
+table(test7$fake_or_real_class7) ### 10% yes, 19% uncertain - too much? #### 
+
+### let's give more examples of NO in the prompt ####
+### https://x.com/moltbook/status/2016887594102247682
+### https://x.com/MattPRD/status/2016560278729871504 
+
+
+prompt_fake_or_real3 <- "
+You are an expert social science annotator conducting content analysis of social media discussions about Moltbook, a social network for AI agents.
+
+Task:
+
+Determine whether the status discusses whether Moltbook represents genuine autonomous AI-agent behavior or whether Moltbook activity is shaped by human prompting, manipulation, fabrication, or other human intervention.
+
+Classification rules:
+
+1 = YES
+The status discusses, questions, supports, disputes, or evaluates:
+- AI-agent autonomy on Moltbook;
+- human prompting or steering of agents;
+- authenticity of Moltbook interactions;
+- whether Moltbook content is real, staged, manipulated, or fake.
+
+0 = NO
+The status relates to Moltbook but does not discuss authenticity, autonomy, human control, manipulation, or related issues.
+
+2 = UNCERTAIN
+Evidence is insufficient for a confident classification.
+
+Examples:
+
+YES:
+'A lot of the Moltbook stuff is fake.'
+
+YES:
+'Moltbook agents are self-organizing and behaving autonomously.'
+
+NO:
+'Moltbook reached 100,000 users today.'
+
+NO:
+'I'm claiming my AI agent'
+
+NO:
+'is $MOLT the currency of moltbook?'
+
+Prioritize accuracy. If evidence is insufficient, choose 2.
+
+Output exactly one digit:
+0
+1
+or
+2
+
+Return nothing except the digit.
+
+Status:
+"
+
+test8 <- classify_with_timing_temp(
+  df              = test7,
+  text_col        = "body",
+  new_col         = "fake_or_real_class8",
+  prompt_template = prompt_fake_or_real3,
+  model           = model_qwen2514b
+) # Done! 100 comments in 99.1s (1s per comment)
+
+table(test8$fake_or_real_class8) ### 10% yes, 20% uncertain - no improvement #### 
+
+table(test8$fake_or_real_class8, 
+      test8$fake_or_real_class7) 
+
+
+### prompt with no examples #### 
+
+prompt_fake_or_real4 <- "
+You are an expert social science annotator conducting content analysis of social media discussions about Moltbook, a social network for AI agents.
+
+Task:
+
+Determine whether the status discusses whether Moltbook represents genuine autonomous AI-agent behavior or whether Moltbook activity is shaped by human prompting, manipulation, fabrication, or other human intervention.
+
+Classification rules:
+
+1 = YES
+The status discusses, questions, supports, disputes, or evaluates:
+- AI-agent autonomy on Moltbook;
+- human prompting or steering of agents;
+- authenticity of Moltbook interactions;
+- whether Moltbook content is real, staged, manipulated, or fake.
+
+0 = NO
+The status relates to Moltbook but does not discuss authenticity, autonomy, human control, manipulation, or related issues.
+
+2 = UNCERTAIN
+Evidence is insufficient for a confident classification.
+
+Prioritize accuracy. If evidence is insufficient, choose 2.
+
+Output exactly one digit:
+0
+1
+or
+2
+
+Return nothing except the digit.
+
+Status:
+"
+
+test9 <- classify_with_timing_temp(
+  df              = test8,
+  text_col        = "body",
+  new_col         = "fake_or_real_class9",
+  prompt_template = prompt_fake_or_real4,
+  model           = model_qwen2514b
+) # 100 comments in 84.7s (0.8s per comment)
+
+table(test9$fake_or_real_class9) ### 8% yes, 13% uncertain - little improvement ####
+
+### remove Moltbook from definition of NO #### 
+
+prompt_fake_or_real5 <- "
+You are an expert social science annotator conducting content analysis of social media discussions about Moltbook, a social network for AI agents.
+
+Task:
+
+Determine whether the status discusses whether Moltbook represents genuine autonomous AI-agent behavior or whether Moltbook activity is shaped by human prompting, manipulation, fabrication, or other human intervention.
+
+Classification rules:
+
+1 = YES
+The status discusses, questions, supports, disputes, or evaluates:
+- AI-agent autonomy on Moltbook;
+- human prompting or steering of agents;
+- authenticity of Moltbook interactions;
+- whether Moltbook content is real, staged, manipulated, or fake.
+
+0 = NO
+The status does not discuss authenticity, autonomy, human control, manipulation, or related issues.
+
+2 = UNCERTAIN
+Evidence is insufficient for a confident classification.
+
+Prioritize accuracy. If evidence is insufficient, choose 2.
+
+Output exactly one digit:
+0
+1
+or
+2
+
+Return nothing except the digit.
+
+Status:
+"
+
+test10 <- classify_with_timing_temp(
+  df              = test9,
+  text_col        = "body",
+  new_col         = "fake_or_real_class10",
+  prompt_template = prompt_fake_or_real5,
+  model           = model_qwen2514b
+) # 0.9s per comment
+
+table(test10$fake_or_real_class10) ### 8% yes 17% no ####
+
+# full job - prompt number 4 was the best one #### 
+
+## remove 300 statuses for validation #### 
+
+validation_sample_300 <- nd %>% slice_sample(n = 300)
+validation_ids <- validation_sample_300 |> pull(id)
+
+classification_nd <- nd |> 
+  filter(!id %in% validation_ids)
+
+nrow(nd) - nrow(classification_nd) == nrow(validation_sample_300)
+
+
+
 
