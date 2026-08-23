@@ -511,6 +511,14 @@ classification_nd <- nd |>
 
 nrow(nd) - nrow(classification_nd) == nrow(validation_sample_300)
 
+classification_nd_job1 <- classify_with_timing_temp(
+  df              = classification_nd,
+  text_col        = "body",
+  new_col         = "fake_or_real_class",
+  prompt_template = prompt_fake_or_real4,
+  model           = model_qwen2514b
+) # Done! 29282 comments in 22174.5s (0.8s per comment)
 
+frq(classification_nd_job1$fake_or_real_class, min.frq = 10)
 
-
+# save(classification_nd_job1, file = "classification_nd_job1.RData")
