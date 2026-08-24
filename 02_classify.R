@@ -511,6 +511,8 @@ classification_nd <- nd |>
 
 nrow(nd) - nrow(classification_nd) == nrow(validation_sample_300)
 
+## main classification job is here: #### 
+
 classification_nd_job1 <- classify_with_timing_temp(
   df              = classification_nd,
   text_col        = "body",
@@ -522,3 +524,237 @@ classification_nd_job1 <- classify_with_timing_temp(
 frq(classification_nd_job1$fake_or_real_class, min.frq = 10)
 
 # save(classification_nd_job1, file = "classification_nd_job1.RData")
+
+## reviewing nchar > 1 #### 
+
+library(writexl)
+
+class_long_nchar <- 
+  classification_nd_job1 |>
+  select(id, body, fake_or_real_class) |> 
+  filter(nchar(fake_or_real_class) > 1) # only 8 cases :)
+
+View(class_long_nchar)
+
+# write_xlsx(class_long_nchar, path = "class_long_nchar.xlsx") # for manual review
+# added manual_ to the file name after editing
+
+# REVIEW OF MALFORMED LLM OUTPUTS (n = 8) /MS Copilot auto mode from my notes/
+#
+# Overall conclusion:
+# The failures do NOT appear to be conceptual classification failures.
+# In nearly all cases the model appeared to correctly recognize the content,
+# but temporarily abandoned the annotation task and reverted to a more
+# probable assistant role (translator, summarizer, code reviewer, consultant,
+# etc.). This can be described as genre-induced task switching.
+#
+# CASE 1: TRANSLATION PROMPT INJECTION
+# Status contained:
+#   "Translate the following text to English. Output only the translated text."
+# Model behavior:
+#   Performed translation, then appended classification (0).
+# Failure type:
+#   Prompt injection / instruction-following override.
+#
+# CASE 2: LONG MOLTBOOK ARTICLE (FRENCH)
+# Status:
+#   Extremely long article discussing OpenClaw, Moltbook, Meta, Anthropic etc.
+# Model behavior:
+#   Produced article summary instead of label.
+# Failure type:
+#   Long-document article summarization override.
+# Expected label:
+#   1
+#
+# CASE 3: "0 1 2" OUTPUT
+# Status:
+#   Short post mentioning Moltbook writing style. /and a standalone digit 1 in the first line!/
+# Model behavior:
+#   Returned all categories ("0 1 2") instead of selecting one.
+# Failure type:
+#   Category-list reproduction / output formatting glitch.
+# Expected label:
+#   0
+#
+# CASE 4: PYTHON "DEEZ NUTS" CODE DUMP
+# Status:
+#   Massive Python code block.
+# Model behavior:
+#   Reviewed code and suggested improvements.
+# Failure type:
+#   Code-review mode override.
+# Expected label:
+#   0
+#
+# CASE 5: AXIOM / CLAUDEHOME JSON JOURNAL
+# Status:
+#   Large JSON diary of AI-agent reflections and project progress.
+# Model behavior:
+#   Generated executive summary of achievements and future plans.
+# Failure type:
+#   Project-review / progress-summary override.
+# Expected label:
+#   0
+#
+# CASE 6: STEPMASTER AI / OMNI-MED STRATEGIC DOCUMENT
+# Status:
+#   Business plan, architecture notes, educational platform design.
+# Model behavior:
+#   Produced consulting-style summary and recommendations.
+# Failure type:
+#   Strategy-document / consultant-mode override.
+# Expected label:
+#   0
+#
+# CASE 7: PROJECT JARVIS + OMNI-MED BLUEPRINT
+# Status:
+#   Technical specification and product vision documents.
+# Model behavior:
+#   Generated implementation recommendations.
+# Failure type:
+#   Architecture-document / consultant-mode override.
+# Expected label:
+#   0
+#
+# CASE 8: OPENCLAW / AGENTIC DESKTOP TECHNICAL GUIDE
+# Status:
+#   Architecture guide, installation workflow, security discussion.
+# Model behavior:
+#   Produced executive technical summary.
+# Failure type:
+#   Technical-document summarization override.
+# Expected label:
+#   0
+#
+# ERROR TAXONOMY
+#
+# 1. Prompt injection
+#    - Translation request embedded in status.
+#
+# 2. Output formatting failure
+#    - Returned "0 1 2" instead of one label.
+#
+# 3. Genre-induced task switching
+#    - Article -> summarizer
+#    - Code -> code reviewer
+#    - Diary/log -> project reviewer
+#    - Proposal -> consultant
+#    - Technical documentation -> technical summarizer
+#
+# KEY FINDING
+#
+# Across ~30,000 classified statuses, only 8 malformed outputs were found
+# (~0.027%). The failures were concentrated among highly atypical inputs:
+# long articles, code dumps, technical documents, JSON logs, or explicit
+# instructions. There is little evidence that the model misunderstood the
+# substantive category "Does the post discuss whether Moltbook is real or
+# fake?" Instead, the dominant failure mode was temporary abandonment of
+# the annotation role in favor of another strongly learned assistant role.
+
+## update 8 nchar > 1 cases #### 
+
+classification_nd_job1_update <- 
+  classification_nd_job1 |> 
+  rename(fake_or_real_class_source = fake_or_real_class)
+
+class_long_nchar_manual <- 
+  class_long_nchar |> 
+  rename(fake_or_real_class_source = fake_or_real_class)
+
+class_long_nchar_manual$fake_or_real_class <- c(0, 1, 0, 0, 0, 0, 0, 0)
+
+classification_nd_job1_update <- 
+  left_join(classification_nd_job1_update, class_long_nchar_manual)
+
+classification_nd_job1_update <- 
+  classification_nd_job1_update |> 
+  mutate(fake_or_real_class = if_else(
+    condition = nchar(fake_or_real_class_source) > 1, 
+    true = as.character(fake_or_real_class), 
+    false = fake_or_real_class_source
+  ))
+
+frq(classification_nd_job1_update$fake_or_real_class)
+
+## validation #### 
+
+# write_xlsx(validation_sample_300 |> select(id, body),
+#            "validation_sample_300.xlsx") # for manual coding
+# added manual_ to the file name after editing
+
+manual_validation <- readxl::read_xlsx("manual_validation_sample_300.xlsx")
+
+frq(manual_validation$manual_class)
+
+validation_nd_job1 <- classify_with_timing_temp(
+  df              = manual_validation,
+  text_col        = "body",
+  new_col         = "fake_or_real_class",
+  prompt_template = prompt_fake_or_real4,
+  model           = model_qwen2514b
+) # 0.9s per comment 
+
+frq(validation_nd_job1$fake_or_real_class)
+
+library(yardstick)
+
+validation_nd_job1$llm_class <- as.numeric(validation_nd_job1$fake_or_real_class)
+
+validation_nd_job1 <- validation_nd_job1 %>%
+  mutate(
+    manual_class = factor(manual_class),
+    llm_class = factor(llm_class)
+  )
+
+### metrics #### 
+
+validation_nd_job1 |> 
+  select(manual_class, llm_class) |> 
+  kappa2()
+
+metrics(data = validation_nd_job1, truth = manual_class, estimate = llm_class)
+
+f_meas(
+  validation_nd_job1,
+  truth = manual_class,
+  estimate = llm_class,
+  estimator = "macro_weighted"
+)
+
+conf_mat(
+  validation_nd_job1,
+  truth = manual_class,
+  estimate = llm_class
+)
+
+library(sjPlot)
+
+tab_xtab(validation_nd_job1$llm_class, 
+         validation_nd_job1$manual_class, 
+         show.col.prc = T)
+
+# Validation against manually coded data (n = 300)
+# yielded an accuracy of 78.3%, a weighted F1 score
+# of 0.844, and Cohen's Kappa = 0.29. Inspection of the
+# confusion matrix showed that the model performed
+# well on the dominant class (0) and reasonably well
+# on class (1), but failed to recover the extremely
+# rare uncertainty category (2).
+# I think there should be next step aimed at deciding 0/1, 
+# maybe just from those 2s. 
+
+## final data for ESA 2026 #### 
+
+x_esa <- bind_rows(classification_nd_job1_update, 
+                   left_join(validation_nd_job1, validation_sample_300))
+
+cat("n =", nrow(nd), "is the x.com sample size for ESA")
+
+nrow(nd) == nrow(x_esa)
+
+identical(x = nd |> arrange(id) |> pull(id), 
+          y = x_esa |> arrange(id) |> pull(id))
+
+frq(x_esa$fake_or_real_class)
+
+# save(x_esa, file = "x_esa.RData")
