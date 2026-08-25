@@ -66,3 +66,6 @@ classification_yt_job1 <- classify_with_timing_temp(
 ) # 14261 comments in 11995.5s (0.8s per comment)
 
 # save(classification_yt_job1, file = "classification_yt_job1.RData")
+
+frq(classification_yt_job1$fake_or_real_class) # no longer answers! :) 
+
